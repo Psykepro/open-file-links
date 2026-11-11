@@ -33,9 +33,16 @@ async function projectRoot($, file) {
 const copyTexts = new Map()
 const COPY_TEXTS_MAX = 500
 
-function stash(id, text) {
-  if (copyTexts.size >= COPY_TEXTS_MAX) copyTexts.clear()
-  copyTexts.set(id, text)
+function stash(id, text, label) {
+  if (copyTexts.size >= COPY_TEXTS_MAX) copyTexts.delete(copyTexts.keys().next().value)
+  copyTexts.set(id, { text, label })
+}
+
+// Id from the text itself: unique across blocks and renders, and the same text re-renders to the same id
+function textId(prefix, text) {
+  let h = 5381
+  for (let i = 0; i < text.length; i += 1) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0
+  return prefix + h.toString(36) + '.' + text.length
 }
 
 // Two or more words in an inline code span read as a command to copy whole, not a path
@@ -79,24 +86,44 @@ async function press($, key) {
   if (action === 'open') await openFile($, path, line)
   else if (action === 'copy') await copyText($, path, path)
   else if (action === 'cmd') {
-    const text = copyTexts.get(path)
-    if (text === undefined) $.ui.toast('copy failed: message re-rendered, press again')
-    else await copyText($, text, 'command')
+    const hit = copyTexts.get(path)
+    if (hit === undefined) $.ui.toast('copy failed: message re-rendered, press again')
+    else await copyText($, hit.text, hit.label)
   }
 }
 
 // Opening fence: 3+ backticks or tildes; a closing fence must match the character and be at least as long
 const FENCE_RE = /^\s*(`{3,}|~{3,})(.*)$/
 const MAX_SPAN_LINES = 40
+// Lines that start a new block: an inline span never crosses one
+const BLOCK_START_RE = /^\s*([-*+]\s|\d+[.)]\s|#{1,6}\s|>|\|)/
 
-// Inline span opened at lines[i][open] that closes on a later line of the same paragraph
-function multilineSpan(lines, i, open) {
-  const parts = [lines[i].slice(open + 1)]
+const tickRuns = (s) => [...s.matchAll(/`+/g)].map((m) => ({ pos: m.index, len: m[0].length }))
+
+// Pair backtick runs on one line: a span closes on the next run of the same length; the rest open spans
+function pairRuns(line) {
+  const runs = tickRuns(line)
+  const spans = []
+  const open = []
+  for (let i = 0; i < runs.length; i += 1) {
+    const j = runs.findIndex((r, k) => k > i && r.len === runs[i].len)
+    if (j < 0) open.push(runs[i])
+    else { spans.push({ start: runs[i].pos, end: runs[j].pos + runs[j].len, body: line.slice(runs[i].pos + runs[i].len, runs[j].pos) }); i = j }
+  }
+  return { spans, open }
+}
+
+// Span opened by `opener` on lines[i] that closes on a later line of the same paragraph
+function multilineSpan(lines, i, opener) {
+  const parts = [lines[i].slice(opener.pos + opener.len)]
   for (let j = i + 1; j < lines.length && j - i <= MAX_SPAN_LINES; j += 1) {
-    if (!lines[j].trim()) return null
-    const close = lines[j].indexOf('`')
-    if (close >= 0) {
-      parts.push(lines[j].slice(0, close))
+    if (!lines[j].trim() || BLOCK_START_RE.test(lines[j]) || FENCE_RE.test(lines[j])) return null
+    const same = tickRuns(lines[j]).filter((r) => r.len === opener.len)
+    // an even count means the first run opens a span of its own, so it is not our closer
+    if (same.length % 2 === 0 && same.length) return null
+    const close = same[0]
+    if (close) {
+      parts.push(lines[j].slice(0, close.pos))
       return { end: j, body: parts.join('\n').trim() }
     }
     parts.push(lines[j])
@@ -124,43 +151,45 @@ export function register(on) {
     let fence = null
     let any = false
     let fenceBody = []
-    let uid = 0
-    const addCopy = (body) => {
+        const addCopy = (body) => {
       if (!body.trim()) return null
-      const id = e.requestId + ':f' + (uid += 1)
-      stash(id, body)
+      const id = textId('f', body)
+      stash(id, body, 'text')
       any = true
       return { fence: id }
     }
     for (let i = 0; i < lines.length; i += 1) {
       const line = lines[i]
-      const f = line.match(FENCE_RE)
+      let f = line.match(FENCE_RE)
+      if (f && !fence && f[1][0] === '`' && f[2].includes('`')) f = null
       if (fence) {
         if (f && f[1][0] === fence.ch && f[1].length >= fence.len && !f[2].trim()) {
-          parsed.push(addCopy(fenceBody.join('\n')))
+          parsed.push(addCopy(fenceBody.map((l) => l.slice(Math.min(fence.indent, l.length - l.trimStart().length))).join('\n')))
           fence = null
         } else { fenceBody.push(line); parsed.push(null) }
         continue
       }
-      if (f) { fence = { ch: f[1][0], len: f[1].length }; fenceBody = []; parsed.push(null); continue }
-      const open = line.replace(/`[^`]+`/g, (m) => ' '.repeat(m.length)).indexOf('`')
-      if (open >= 0) {
-        const span = multilineSpan(lines, i, open)
-        if (span) {
-          for (let k = i; k < span.end; k += 1) parsed.push(null)
-          parsed.push(addCopy(span.body))
-          i = span.end
-          continue
-        }
-      }
+      if (f) { fence = { ch: f[1][0], len: f[1].length, indent: line.length - line.trimStart().length }; fenceBody = []; parsed.push(null); continue }
       if (/^\s*\|/.test(line)) { parsed.push(null); continue }
+      let span = null
+      const paired = pairRuns(line)
+      for (const opener of paired.open) {
+        span = multilineSpan(lines, i, opener)
+        if (span) break
+      }
+      if (span) {
+        for (let k = i; k < span.end; k += 1) parsed.push(null)
+        parsed.push(addCopy(span.body))
+        i = span.end
+        continue
+      }
       const hits = []
       const cmdSpans = []
-      for (const m of line.matchAll(/`([^`]+)`/g)) {
-        if (!isCommand(m[1])) continue
-        const id = e.requestId + ':c' + (uid += 1)
-        stash(id, m[1].trim())
-        cmdSpans.push({ cmd: id, text: m[1], start: m.index, end: m.index + m[0].length })
+      for (const m of paired.spans) {
+        if (!isCommand(m.body)) continue
+        const id = textId('c', m.body.trim())
+        stash(id, m.body.trim(), 'command')
+        cmdSpans.push({ cmd: id, text: m.body, start: m.start, end: m.end })
       }
       hits.push(...cmdSpans)
       for (const m of line.matchAll(PATH_RE)) {

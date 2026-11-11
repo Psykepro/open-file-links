@@ -224,3 +224,69 @@ test('a fenced block of whitespace only gets no button', async ($, on) => {
   const ui = await $.ui.mount(MSG('```\n\n```'))
   expect((await copyBtns(ui)).length).toBe(0)
 })
+
+test('backtick runs of different lengths never pair into a multi-line span', async ($, on) => {
+  stubs(on, [])
+  const ui = await $.ui.mount(MSG('- a ```` fence that holds a ``` fence is whole.\n- **Inline:** `word` ok'))
+  expect((await copyBtns(ui)).length).toBe(0)
+})
+
+test('a double-backtick span over lines closes only on a double run', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('use ``first line\nhas a ` tick\nlast`` ok'))
+  const copies = await copyBtns(ui)
+  expect(copies.length).toBe(1)
+  await ui.press({ key: copies[0] })
+  expect(runs[0].stdin).toBe('first line\nhas a ` tick\nlast')
+})
+
+test('a stray tick in one list item never pairs with a span in the next', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('- don`t x\n- use `a b` now'))
+  const copies = await copyBtns(ui)
+  expect(copies.length).toBe(1)
+  await ui.press({ key: copies[0] })
+  expect(runs[0].stdin).toBe('a b')
+})
+
+test('a stray tick right before a fence does not eat the fence or the path after it', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, ['/abs/p.py'], runs)
+  const ui = await $.ui.mount(MSG('it`s:\n```sh\ndate `x`\n```\nsee /abs/p.py'))
+  const copies = await copyBtns(ui)
+  expect(copies.length).toBe(1)
+  await ui.press({ key: copies[0] })
+  expect(runs[0].stdin).toBe('date `x`')
+  expect((await buttons(ui)).some((k) => k.startsWith('ofl|open|/abs/p.py|'))).toBe(true)
+})
+
+test('a stray tick plus a normal span in one paragraph makes no multi-line span', async ($, on) => {
+  stubs(on, [])
+  const ui = await $.ui.mount(MSG('don`t do it,\nuse `foo` here'))
+  expect((await copyBtns(ui)).length).toBe(0)
+})
+
+test('an indented fence copies the body without its indent', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('1. do:\n   ```py\n   if x:\n       go()\n   ```'))
+  const copies = await copyBtns(ui)
+  await ui.press({ key: copies[0] })
+  expect(runs[0].stdin).toBe('if x:\n    go()')
+})
+
+test('a backtick in the info string makes it inline code, not a fence', async ($, on) => {
+  stubs(on, [])
+  const ui = await $.ui.mount(MSG('```code``` does x\nplain line'))
+  expect((await copyBtns(ui)).length).toBe(0)
+})
+
+test('two blocks in one message each copy their own text', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('```\nAAA\n```\nmid\n```\nBBB\n```'))
+  for (const k of await copyBtns(ui)) await ui.press({ key: k })
+  expect(runs.map((r) => r.stdin)).toEqual(['AAA', 'BBB'])
+})
