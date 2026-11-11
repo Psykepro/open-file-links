@@ -17,7 +17,7 @@ Or from a shell: `claude plugin marketplace add Psykepro/open-file-links`, then 
 - Matches absolute, `~/`, and relative paths with a `/` (`src/a.ts`, `../x/y.py`), optionally `:line`. Relative paths resolve against the session working directory.
 - Only paths that exist get buttons. Table rows are left as text.
 - An inline code span with two or more words (a command) gets no path buttons; it shows as written with one `⧉` button that copies the whole command, pipes and quotes included.
-- A fenced code block gets one `⧉ copy` button under it that copies the whole body.
+- Any multi-line text gets one `⧉ copy` button that copies the whole body, whatever it holds (a Slack message, a prompt, a config, a command list): a fenced block (backticks or `~~~`, any length, any language label or none), or an inline backtick span that runs over several lines. The message does not need to contain a path.
 - Open runs `<editor> <project root> -g <file>[:line]`.
 - Copy tries `pbcopy`, `wl-copy`, `xclip -selection clipboard`, then `clip.exe`; the first that succeeds wins.
 

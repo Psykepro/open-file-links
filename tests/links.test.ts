@@ -170,3 +170,57 @@ test('a fenced block gets one copy button for its whole body', async ($, on) => 
   await ui.press({ key: copies[0] })
   expect(runs).toEqual([{ argv: ['pbcopy'], stdin: 'cd /abs/wt\nmake x | grep y' }])
 })
+
+const copyBtns = async (ui: any) => (await buttons(ui)).filter((k) => k.startsWith('ofl|cmd|'))
+
+test('a fenced text block with no path in the message still gets a copy button', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('Slack:\n```\nHi team,\nrelease is out.\n```'))
+  const copies = await copyBtns(ui)
+  expect(copies.length).toBe(1)
+  await ui.press({ key: copies[0] })
+  expect(runs).toEqual([{ argv: ['pbcopy'], stdin: 'Hi team,\nrelease is out.' }])
+})
+
+test('a tilde fence gets a copy button', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('~~~text\nline one\nline two\n~~~'))
+  const copies = await copyBtns(ui)
+  expect(copies.length).toBe(1)
+  await ui.press({ key: copies[0] })
+  expect(runs[0].stdin).toBe('line one\nline two')
+})
+
+test('a longer fence keeps an inner shorter fence as body text', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('````md\n```sh\nmake x\n```\n````\nafter'))
+  const copies = await copyBtns(ui)
+  expect(copies.length).toBe(1)
+  await ui.press({ key: copies[0] })
+  expect(runs[0].stdin).toBe('```sh\nmake x\n```')
+})
+
+test('an inline backtick span over several lines is copied whole', async ($, on) => {
+  const runs: any[] = []
+  stubs(on, [], runs)
+  const ui = await $.ui.mount(MSG('Send `Hi all,\nthe build is green.\nThanks` to the channel'))
+  const copies = await copyBtns(ui)
+  expect(copies.length).toBe(1)
+  await ui.press({ key: copies[0] })
+  expect(runs[0].stdin).toBe('Hi all,\nthe build is green.\nThanks')
+})
+
+test('a stray backtick before a blank line does not swallow the rest', async ($, on) => {
+  stubs(on, [])
+  const ui = await $.ui.mount(MSG('it`s odd\n\nlater `a b` here'))
+  expect((await copyBtns(ui)).length).toBe(1)
+})
+
+test('a fenced block of whitespace only gets no button', async ($, on) => {
+  stubs(on, [])
+  const ui = await $.ui.mount(MSG('```\n\n```'))
+  expect((await copyBtns(ui)).length).toBe(0)
+})

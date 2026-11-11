@@ -1,6 +1,6 @@
 {
   "name": "open-file-links",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Clickable open and copy buttons for file paths, and one-click copy for commands, in Claude Code's terminal. Part of the upcoming Agentic Engineering Operating System (AEOS)",
   "author": {
     "name": "Nikolay Nedkov"

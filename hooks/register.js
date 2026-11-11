@@ -85,6 +85,25 @@ async function press($, key) {
   }
 }
 
+// Opening fence: 3+ backticks or tildes; a closing fence must match the character and be at least as long
+const FENCE_RE = /^\s*(`{3,}|~{3,})(.*)$/
+const MAX_SPAN_LINES = 40
+
+// Inline span opened at lines[i][open] that closes on a later line of the same paragraph
+function multilineSpan(lines, i, open) {
+  const parts = [lines[i].slice(open + 1)]
+  for (let j = i + 1; j < lines.length && j - i <= MAX_SPAN_LINES; j += 1) {
+    if (!lines[j].trim()) return null
+    const close = lines[j].indexOf('`')
+    if (close >= 0) {
+      parts.push(lines[j].slice(0, close))
+      return { end: j, body: parts.join('\n').trim() }
+    }
+    parts.push(lines[j])
+  }
+  return null
+}
+
 const noop = () => {}
 // Theme key of the inline-code blue
 const LINK_COLOR = 'permission'
@@ -97,28 +116,43 @@ export function register(on) {
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     const text = e.props.text
-    if (!text || !text.includes('/')) return next(e)
+    if (!text || !(text.includes('/') || text.includes('`') || text.includes('~~~'))) return next(e)
     const cwd = String(await $.session.cwd())
     const home = (await $.env.get('HOME')) || ''
     const lines = text.split('\n')
     const parsed = []
-    let fenced = false
+    let fence = null
     let any = false
     let fenceBody = []
     let uid = 0
-    for (const line of lines) {
-      if (/^\s*```/.test(line)) {
-        if (fenced && fenceBody.length) {
-          const id = e.requestId + ':f' + (uid += 1)
-          stash(id, fenceBody.join('\n'))
-          parsed.push({ fence: id })
-          any = true
-        } else parsed.push(null)
-        fenced = !fenced
-        fenceBody = []
+    const addCopy = (body) => {
+      if (!body.trim()) return null
+      const id = e.requestId + ':f' + (uid += 1)
+      stash(id, body)
+      any = true
+      return { fence: id }
+    }
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i]
+      const f = line.match(FENCE_RE)
+      if (fence) {
+        if (f && f[1][0] === fence.ch && f[1].length >= fence.len && !f[2].trim()) {
+          parsed.push(addCopy(fenceBody.join('\n')))
+          fence = null
+        } else { fenceBody.push(line); parsed.push(null) }
         continue
       }
-      if (fenced) { fenceBody.push(line); parsed.push(null); continue }
+      if (f) { fence = { ch: f[1][0], len: f[1].length }; fenceBody = []; parsed.push(null); continue }
+      const open = line.replace(/`[^`]+`/g, (m) => ' '.repeat(m.length)).indexOf('`')
+      if (open >= 0) {
+        const span = multilineSpan(lines, i, open)
+        if (span) {
+          for (let k = i; k < span.end; k += 1) parsed.push(null)
+          parsed.push(addCopy(span.body))
+          i = span.end
+          continue
+        }
+      }
       if (/^\s*\|/.test(line)) { parsed.push(null); continue }
       const hits = []
       const cmdSpans = []
