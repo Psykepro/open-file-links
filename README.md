@@ -29,6 +29,12 @@ Or from a shell: `claude plugin marketplace add Psykepro/open-file-links`, then 
 | `OPEN_FILE_ROOT_MARKERS` | `.git` | comma list of file/folder names marking a project root, tried in order; no match opens the file's folder |
 | `OPEN_FILE_COPY_CMD` | unset | clipboard command (reads the path on stdin), replaces the built-in list, e.g. `xsel -ib` |
 
+## What it runs and what it sends
+
+- **Reads:** the text of assistant messages (to find file paths and commands) and checks on disk whether each path exists. Nothing else is read.
+- **Runs, on a button press only:** your editor (`OPEN_FILE_EDITOR`, default `code`) as `<editor> <project root> -g <file>[:line]`, and a clipboard tool (`pbcopy`, `wl-copy`, `xclip -selection clipboard`, `clip.exe`, or the command you set in `OPEN_FILE_COPY_CMD`) with the path or command text on stdin. The editor and clipboard commands come only from those fixed names and your own environment variables; no other program is started.
+- **Sends:** nothing. The mod makes no network calls, has no telemetry and stores nothing. Data leaves the mod only as the text handed to your own clipboard tool or the path handed to your own editor.
+
 ## License
 
 MIT
