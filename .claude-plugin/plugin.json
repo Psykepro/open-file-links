@@ -1,0 +1,20 @@
+{
+  "name": "open-file-links",
+  "version": "0.3.0",
+  "description": "Clickable open and copy buttons for file paths, and one-click copy for commands, in Claude Code's terminal. Part of the upcoming Agentic Engineering Operating System (AEOS)",
+  "author": {
+    "name": "Nikolay Nedkov"
+  },
+  "license": "MIT",
+  "keywords": [
+    "files",
+    "paths",
+    "editor",
+    "clipboard",
+    "terminal",
+    "copy",
+    "commands"
+  ],
+  "homepage": "https://github.com/Psykepro/open-file-links",
+  "repository": "https://github.com/Psykepro/open-file-links"
+}

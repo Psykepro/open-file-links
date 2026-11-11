@@ -1,0 +1,14 @@
+{
+  "name": "open-file-links",
+  "owner": {
+    "name": "Nikolay Nedkov"
+  },
+  "plugins": [
+    {
+      "name": "open-file-links",
+      "source": "./",
+      "description": "Clickable open and copy buttons for file paths, and one-click copy for commands, in Claude Code's terminal"
+    }
+  ],
+  "description": "Terminal quality-of-life plugins for Claude Code"
+}
